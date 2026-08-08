@@ -1,4 +1,3 @@
-// auth.js - Updated with corrected API endpoints
 
 class AuthManager {
     constructor() {

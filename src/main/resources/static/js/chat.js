@@ -1,4 +1,3 @@
-// chat.js - Updated with corrected API endpoints
 
 class ChatApp {
     constructor() {
