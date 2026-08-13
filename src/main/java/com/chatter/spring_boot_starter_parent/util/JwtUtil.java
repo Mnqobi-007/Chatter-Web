@@ -19,7 +19,8 @@ public class JwtUtil {
 	@Value("${jwt.secret}")
 	private String jwtSecret;
 
-	private Long expiration = 86400000L;
+    @Value("${jwt.expiration}")
+	private Long expiration;
 
 	@PostConstruct
 	public void init() {

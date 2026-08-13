@@ -2,6 +2,7 @@ package com.chatter.spring_boot_starter_parent.config;
 
 import java.util.List;
 
+import io.jsonwebtoken.JwtException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
@@ -35,12 +36,18 @@ public class JwtChannelInterceptor implements ChannelInterceptor {
             if(auth != null && !auth.isEmpty()) {
                 String authHeader = auth.get(0);
                 String token = authHeader.replaceFirst("^Bearer ", "");
-                String username = jwtUtil.extractUsername(token);
+                try {
+                    String username = jwtUtil.extractUsername(token);
 
-                if(username != null && jwtUtil.validateToken(token, username)) {
-                    UsernamePasswordAuthenticationToken authenticated = new UsernamePasswordAuthenticationToken(username, null, List.of());
-                    accessor.setUser(authenticated);
-                    log.debug("{} connected via WebSocket", username);
+                    if(username != null && jwtUtil.validateToken(token, username)) {
+                        UsernamePasswordAuthenticationToken authenticated = new UsernamePasswordAuthenticationToken(username, null, List.of());
+                        accessor.setUser(authenticated);
+                        log.debug("{} connected via WebSocket", username);
+                    } else{
+                        // Reject connection
+                    }
+                } catch (JwtException | IllegalArgumentException e){
+                    // Reject connection
                 }
             }
         }
