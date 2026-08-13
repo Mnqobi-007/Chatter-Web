@@ -77,7 +77,9 @@ public class ChatController {
 	    Message saved = messageService.saveMessage(message);
 	    
 	    if (listener.isUserOnline(message.getReceiver())) {
-	        messagingTemplate.convertAndSendToUser(message.getReceiver(), "/queue/private", message);
+	        messagingTemplate.convertAndSendToUser(message.getReceiver(), "/queue/private", saved);
+            saved.setDelivered(true);
+            messageRepository.save(saved);
 	    }
 	    
 	    return ResponseEntity.ok(saved);

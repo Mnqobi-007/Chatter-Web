@@ -18,5 +18,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 	@Modifying
 	@Query("UPDATE Message m SET m.read = true, m.delivered = true WHERE m.sender = :sender AND m.receiver = :receiver AND m.read = false")
 	void markAsRead(@Param("sender") String sender, @Param("receiver") String receiver);
+
+    @Query("SELECT COUNT(m) > 0 FROM Message m WHERE m.fileUrl = :fileUrl AND (m.sender = :username OR m.receiver = :username)")
+    boolean existsByFileUrlAndParticipant(@Param("fileUrl") String fileUrl, @Param("username") String username);
 }
 

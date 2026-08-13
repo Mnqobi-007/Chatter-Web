@@ -1,4 +1,3 @@
-
 class AuthManager {
     constructor() {
         this.token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
@@ -52,9 +51,6 @@ class AuthManager {
         // Update UI based on auth state
         this.updateUI();
 
-        // If already authenticated and on home page, redirect to chats
-        // NOTE: pages are served under the /api context-path, so the home
-        // page's pathname is '/api/', not '/'
         if (this.isAuthenticated && window.location.pathname === `${this.apiBase}/`) {
             window.location.href = `${this.apiBase}/chats`;
         }
@@ -162,8 +158,8 @@ class AuthManager {
             this.showError('signupForm', 'Passwords do not match');
             return;
         }
-        if (password.length < 6) {
-            this.showError('signupForm', 'Password must be at least 6 characters');
+        if (password.length < 8) {
+            this.showError('signupForm', 'Password must be at least 8 characters');
             return;
         }
 
@@ -355,21 +351,14 @@ class AuthManager {
         };
     }
 
-    // For multipart/form-data uploads: only Authorization - the browser must set
-    // Content-Type itself (with its boundary string) when the body is a FormData.
     getAuthHeaderOnly() {
         return {
             'Authorization': `Bearer ${this.token}`
         };
     }
 
-    // Central fetch wrapper: attaches the current access token, and on a 401
-    // transparently refreshes it once and retries. Every authenticated fetch
-    // in chat.js should go through this instead of calling fetch() directly.
     async authFetch(url, options = {}) {
         const isFormData = options.body instanceof FormData;
-        // Recomputed on every call (including the retry) so it always reflects
-        // the current this.token after a refresh updates it in place.
         const buildHeaders = () => isFormData ? this.getAuthHeaderOnly() : this.getAuthHeaders();
 
         const doFetch = () => fetch(url, {

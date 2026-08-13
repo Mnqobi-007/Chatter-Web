@@ -1,4 +1,3 @@
-
 class ChatApp {
     constructor() {
         this.stompClient = null;
@@ -53,6 +52,12 @@ class ChatApp {
         // Search contacts
         this.searchInput?.addEventListener('input', () => this.filterContacts());
 
+        // Contact selection
+        this.contactList?.addEventListener('click', (e) => {
+            const item = e.target.closest('.contact-item[data-id]');
+            if (item) this.selectContact(item.dataset.id);
+        });
+
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -62,7 +67,7 @@ class ChatApp {
             });
         });
 
-        // Add contact - using the corrected /api/contacts endpoint
+        // Add contact
         document.getElementById('addContactForm')?.addEventListener('submit', (e) => {
             e.preventDefault();
             this.addContact();
@@ -79,7 +84,7 @@ class ChatApp {
                 e.target.classList.remove('active');
             }
         });
-        
+
         // Logout from chat page
         document.getElementById('logoutBtn')?.addEventListener('click', () => {
             auth.logout();
@@ -92,7 +97,7 @@ class ChatApp {
         document.getElementById('fileInput')?.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) this.uploadAndSendFile(file);
-            e.target.value = ''; // reset so picking the same file twice still fires 'change'
+            e.target.value = '';
         });
     }
 
@@ -141,7 +146,7 @@ class ChatApp {
     async loadContacts() {
         try {
             const response = await auth.authFetch(`${this.apiBase}/contacts`);
-            
+
             if (response.ok) {
                 const users = await response.json();
                 // Map User objects to contact format
@@ -202,23 +207,30 @@ class ChatApp {
             return;
         }
 
+        // Every field here can, in principle, be attacker-influenced (username,
+        // display name, etc). Escape it all rather than trusting server-side
+        // validation as the only line of defense - and use a data attribute +
+        // delegated listener instead of building an inline onclick="" string,
+        // since interpolating contact.id into an attribute string is itself
+        // an injection vector even if the visible text were escaped.
         this.contactList.innerHTML = filtered.map(contact => `
             <div class="contact-item ${this.currentContact?.id === contact.id ? 'active' : ''}"
-                 data-id="${contact.id}" onclick="window.chatApp.selectContact('${contact.id}')">
+                 data-id="${this.escapeHtml(contact.id)}">
                 <div class="avatar">
-                    <img src="${contact.avatar}" alt="${contact.name}" onerror="this.src='https://i.pravatar.cc/50?img=${Math.floor(Math.random() * 70)}'">
+                    <img src="${this.escapeHtml(contact.avatar)}" alt="${this.escapeHtml(contact.name)}" onerror="this.src='https://i.pravatar.cc/50?img=${Math.floor(Math.random() * 70)}'">
                     <span class="status-indicator ${contact.online ? 'online' : 'offline'}"></span>
                 </div>
                 <div class="contact-info">
-                    <h4>${contact.name}</h4>
-                    <div class="last-message">${contact.lastMessage || 'No messages yet'}</div>
+                    <h4>${this.escapeHtml(contact.name)}</h4>
+                    <div class="last-message">${this.escapeHtml(contact.lastMessage || 'No messages yet')}</div>
                 </div>
                 <div class="contact-meta">
-                    <span class="time">${contact.timestamp || ''}</span>
+                    <span class="time">${this.escapeHtml(contact.timestamp || '')}</span>
                     ${contact.unread > 0 ? `<span class="unread-badge">${contact.unread}</span>` : ''}
                 </div>
             </div>
         `).join('');
+
     }
 
     filterContacts(tab = 'all') {
@@ -359,7 +371,7 @@ class ChatApp {
         if (!message.timestamp) {
             message.timestamp = new Date().toISOString();
         }
-        
+
         const isCurrent = this.currentContact && message.sender === this.currentContact.id;
 
         if (!this.messages[message.sender]) {
@@ -405,9 +417,6 @@ class ChatApp {
         this.scrollToBottom();
     }
 
-    // Renders an inline <img> for images, or a download link for other file types.
-    // fileUrl is a relative path like "/chat/files/<uuid>.png" returned by the
-    // upload endpoint, so it needs the apiBase prefix to resolve correctly.
     renderFileBubble(message) {
         const url = `${this.apiBase}${message.fileUrl}`;
         const isImage = message.fileType && message.fileType.startsWith('image/');
@@ -418,8 +427,7 @@ class ChatApp {
     }
 
     markMessagesAsRead(contactId) {
-        // This would be implemented if you have a read receipt endpoint
-        // For now, just update local state
+        // Update local state for immediate UI feedback...
         const messages = this.messages[contactId] || [];
         messages.forEach(msg => {
             if (msg.sender === contactId && !msg.read) {
@@ -427,6 +435,10 @@ class ChatApp {
             }
         });
         this.saveLocalMessages();
+
+        if (this.connected && this.stompClient) {
+            this.stompClient.send('/chat/chat.read', {}, JSON.stringify({ sender: contactId }));
+        }
     }
 
     handleStatusUpdate(status) {

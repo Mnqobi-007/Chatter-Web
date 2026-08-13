@@ -2,6 +2,8 @@ package com.chatter.spring_boot_starter_parent.config;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
@@ -16,6 +18,7 @@ import com.chatter.spring_boot_starter_parent.util.JwtUtil;
 @Component
 public class JwtChannelInterceptor implements ChannelInterceptor {
     private final JwtUtil jwtUtil;
+    private static final Logger log = LoggerFactory.getLogger(JwtChannelInterceptor.class);
 
     public JwtChannelInterceptor(JwtUtil jwtUtil) {
         super();
@@ -37,7 +40,7 @@ public class JwtChannelInterceptor implements ChannelInterceptor {
                 if(username != null && jwtUtil.validateToken(token, username)) {
                     UsernamePasswordAuthenticationToken authenticated = new UsernamePasswordAuthenticationToken(username, null, List.of());
                     accessor.setUser(authenticated);
-                    System.out.println(username + " connected via WebSocket");
+                    log.debug("{} connected via WebSocket", username);
                 }
             }
         }

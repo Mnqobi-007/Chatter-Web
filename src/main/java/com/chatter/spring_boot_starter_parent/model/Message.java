@@ -27,6 +27,12 @@ public class Message {
 
 	@Column(nullable = false)
 	private boolean read = false;
+
+    @Column(name = "file_url")
+    private String fileUrl;
+
+    @Column(name = "file_type")
+    private String fileType;
 	
 	public Message() {
 	    this.timestamp = LocalDateTime.now();
@@ -81,6 +87,21 @@ public class Message {
 	public void setRead(boolean read) { 
 		this.read = read; 
 	}
-	
-	
+
+
+    public String getFileType() {
+        return fileType;
+    }
+
+    public void setFileType(String fileType) {
+        this.fileType = fileType;
+    }
+
+    public String getFileUrl() {
+        return fileUrl;
+    }
+
+    public void setFileUrl(String fileUrl) {
+        this.fileUrl = fileUrl;
+    }
 }

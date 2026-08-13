@@ -4,6 +4,7 @@ import com.chatter.spring_boot_starter_parent.repository.UserRepository;
 import java.util.Map;
 
 //import org.springframework.cache.annotation.CacheEvict;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -95,7 +96,7 @@ public class AuthController {
 	}
 	
 	@PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
         // RegisterRequest DTO with username, email, password
 		if(userRepository.findByUsername(request.getUsername()).isPresent()) {
 			return ResponseEntity.badRequest().body(Map.of("message", "Username already taken"));

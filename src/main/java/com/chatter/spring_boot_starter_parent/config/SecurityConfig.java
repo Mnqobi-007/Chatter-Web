@@ -3,9 +3,13 @@ package com.chatter.spring_boot_starter_parent.config;
 import java.util.Arrays;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -28,7 +32,11 @@ import com.chatter.spring_boot_starter_parent.security.JwtRequestFilter;
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
     private final JwtRequestFilter jwtRequestFilter;
+
+    @Value("${spring.h2.console.enabled:false}")
+    private boolean h2ConsoleEnabled;
 
     public SecurityConfig(JwtRequestFilter jwtRequestFilter) {
         this.jwtRequestFilter = jwtRequestFilter;
@@ -62,13 +70,16 @@ public class SecurityConfig {
                         .requestMatchers(new AntPathRequestMatcher("/ws")).permitAll()
                         
                         // ✅ ACTUATOR & H2
-                        .requestMatchers(new AntPathRequestMatcher("/actuator/**")).permitAll()  // *
-                        .requestMatchers(new AntPathRequestMatcher("/h2-console/**")).permitAll()  // *
+                        .requestMatchers(new AntPathRequestMatcher("/actuator/health")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/actuator/**")).hasRole("ADMIN")  // *
+                        .requestMatchers(new AntPathRequestMatcher("/h2-console/**"))
+                                .access((authentication, context) ->
+                                        new AuthorizationDecision(h2ConsoleEnabled))
                         
                         // ✅ ROOT PATH
                         .requestMatchers(new AntPathRequestMatcher("/")).permitAll()
                         
-                        // ✅ CHATS PAGE - REQUIRES AUTHENTICATION
+                        // ✅ CHATS PAGE
                         .requestMatchers(new AntPathRequestMatcher("/chats")).permitAll()
                         
                         // ✅ ANY OTHER REQUEST - REQUIRES AUTHENTICATION
