@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -60,18 +61,18 @@ public class ChatController {
 				message.setTimestamp(LocalDateTime.now());
 			}
 			Message saved = messageService.saveMessage(message);  // save the message
-			message.setId(saved.getId());
+			//message.setId(saved.getId());
 			
 			if(listener.isUserOnline(message.getReceiver())) {  //check if user is online
+                saved.setDelivered(true);
+                messageService.saveMessage(saved);
 				messagingTemplate.convertAndSendToUser(message.getReceiver(), "/queue/private", saved);
-				saved.setDelivered(true);
-				messageRepository.save(saved);
 			}
 		}
 	}
 	
 	@PostMapping("/send")
-	public ResponseEntity<?> sendMessageRest(@RequestBody Message message, Authentication auth) {
+	public ResponseEntity<?> sendMessageRest(@Valid @RequestBody Message message, Authentication auth) {
 	    message.setSender(auth.getName());
 	    message.setTimestamp(LocalDateTime.now());
 	    Message saved = messageService.saveMessage(message);

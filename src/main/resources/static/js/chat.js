@@ -5,8 +5,13 @@ class ChatApp {
         this.currentContact = null;
         this.contacts = [];
         this.messages = {};
+        this.typingTimeout = null;
+        this.isTyping = false;
         this.apiBase = '/api';
         this.wsEndpoint = 'ws';
+        this.messagePage = 0;
+        this.hasMoreMessages = true;
+        this.isLoadingMessages = false;
 
         // DOM elements
         this.contactList = document.getElementById('contactList');
@@ -31,7 +36,6 @@ class ChatApp {
             return;
         }
 
-        // Set username
         if (this.currentUsername) {
             this.currentUsername.textContent = auth.username;
         }
@@ -46,7 +50,15 @@ class ChatApp {
         // Send message
         this.sendBtn?.addEventListener('click', () => this.sendMessage());
         this.messageInput?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.sendMessage();
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+
+        // Typing indicator
+        this.messageInput?.addEventListener('input', () => {
+            this.handleTyping();
         });
 
         // Search contacts
@@ -78,19 +90,18 @@ class ChatApp {
         document.getElementById('addContactModalClose')?.addEventListener('click', () => {
             document.getElementById('addContactModal')?.classList.remove('active');
         });
-        // Close add contact modal on backdrop click
         document.getElementById('addContactModal')?.addEventListener('click', (e) => {
             if (e.target === e.currentTarget) {
                 e.target.classList.remove('active');
             }
         });
 
-        // Logout from chat page
+        // Logout
         document.getElementById('logoutBtn')?.addEventListener('click', () => {
             auth.logout();
         });
 
-        // File/image sharing
+        // File sharing
         document.getElementById('attachFileBtn')?.addEventListener('click', () => {
             document.getElementById('fileInput')?.click();
         });
@@ -99,12 +110,28 @@ class ChatApp {
             if (file) this.uploadAndSendFile(file);
             e.target.value = '';
         });
+
+        // Scroll to load more messages
+        this.chatMessages?.addEventListener('scroll', () => {
+            if (this.chatMessages.scrollTop === 0 && this.hasMoreMessages && !this.isLoadingMessages) {
+                this.loadMoreMessages();
+            }
+        });
     }
 
     connectWebSocket() {
         const token = auth.token;
+        if (!token) {
+            console.error('No token available for WebSocket connection');
+            return;
+        }
+
         const socket = new SockJS(`${this.apiBase}/${this.wsEndpoint}`);
         this.stompClient = Stomp.over(socket);
+
+        // Increase heartbeat intervals to keep connection alive
+        this.stompClient.heartbeat.outgoing = 20000;
+        this.stompClient.heartbeat.incoming = 20000;
 
         this.stompClient.connect(
             { Authorization: `Bearer ${token}` },
@@ -113,6 +140,9 @@ class ChatApp {
                 this.connected = true;
                 this.subscribeToMessages();
                 this.updateUserStatus('online');
+
+                // Check for undelivered messages
+                this.fetchUnreadMessages();
             },
             (error) => {
                 console.error('❌ WebSocket connection failed:', error);
@@ -124,13 +154,35 @@ class ChatApp {
     }
 
     subscribeToMessages() {
+        if (!this.stompClient || !this.stompClient.connected) return;
+
         // Subscribe to private messages
         this.stompClient.subscribe('/user/queue/private', (message) => {
             const msg = JSON.parse(message.body);
             this.handleNewMessage(msg);
         });
 
-        // Subscribe to status updates (if implemented)
+        // Subscribe to read receipts
+        this.stompClient.subscribe('/user/queue/read', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                this.handleReadReceipt(data);
+            } catch(e) {
+                console.warn('Invalid read receipt:', e);
+            }
+        });
+
+        // Subscribe to typing indicators
+        this.stompClient.subscribe('/user/queue/typing', (message) => {
+            try {
+                const data = JSON.parse(message.body);
+                this.handleTypingIndicator(data);
+            } catch(e) {
+                console.warn('Invalid typing indicator:', e);
+            }
+        });
+
+        // Subscribe to status updates
         this.stompClient.subscribe('/user/queue/status', (message) => {
             try {
                 const status = JSON.parse(message.body);
@@ -140,7 +192,7 @@ class ChatApp {
             }
         });
 
-        console.log('📨 Subscribed to private messages');
+        console.log('📨 Subscribed to all message channels');
     }
 
     async loadContacts() {
@@ -149,21 +201,18 @@ class ChatApp {
 
             if (response.ok) {
                 const users = await response.json();
-                // Map User objects to contact format
                 this.contacts = users.map(user => ({
                     id: user.username,
-                    name: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() || user.username : user.username,
+                    name: user.displayName || user.username,
                     avatar: user.profilePicture || `https://i.pravatar.cc/50?img=${Math.floor(Math.random() * 70)}`,
                     online: user.online || false,
-                    lastMessage: '',
-                    timestamp: '',
-                    unread: 0,
-                    email: user.email,
-                    userId: user.id
+                    lastMessage: user.lastMessage || '',
+                    timestamp: user.lastMessageTime ? this.formatTime(user.lastMessageTime) : '',
+                    unread: user.unreadCount || 0,
+                    email: user.email
                 }));
             } else {
                 console.error('Failed to load contacts');
-                // Fallback to mock data
                 this.loadMockContacts();
             }
         } catch (error) {
@@ -177,10 +226,7 @@ class ChatApp {
         this.contacts = [
             { id: 'alice', name: 'Alice Johnson', avatar: 'https://i.pravatar.cc/50?img=1', online: true, lastMessage: 'Hey! How are you?', timestamp: '10:30 AM', unread: 2 },
             { id: 'bob', name: 'Bob Smith', avatar: 'https://i.pravatar.cc/50?img=2', online: false, lastMessage: 'See you tomorrow!', timestamp: '9:15 AM', unread: 0 },
-            { id: 'charlie', name: 'Charlie Brown', avatar: 'https://i.pravatar.cc/50?img=3', online: true, lastMessage: 'Thanks for your help!', timestamp: 'Yesterday', unread: 1 },
-            { id: 'diana', name: 'Diana Prince', avatar: 'https://i.pravatar.cc/50?img=4', online: true, lastMessage: 'That sounds great! 😊', timestamp: 'Yesterday', unread: 0 },
-            { id: 'eve', name: 'Eve Wilson', avatar: 'https://i.pravatar.cc/50?img=5', online: false, lastMessage: 'Can we reschedule?', timestamp: '2 days ago', unread: 3 },
-            { id: 'frank', name: 'Frank Castle', avatar: 'https://i.pravatar.cc/50?img=6', online: false, lastMessage: "I'll be there", timestamp: '2 days ago', unread: 0 },
+            { id: 'charlie', name: 'Charlie Brown', avatar: 'https://i.pravatar.cc/50?img=3', online: true, lastMessage: 'Thanks for your help!', timestamp: 'Yesterday', unread: 1 }
         ];
     }
 
@@ -207,17 +253,19 @@ class ChatApp {
             return;
         }
 
-        // Every field here can, in principle, be attacker-influenced (username,
-        // display name, etc). Escape it all rather than trusting server-side
-        // validation as the only line of defense - and use a data attribute +
-        // delegated listener instead of building an inline onclick="" string,
-        // since interpolating contact.id into an attribute string is itself
-        // an injection vector even if the visible text were escaped.
+        // Sort by timestamp (most recent first)
+        filtered.sort((a, b) => {
+            if (!a.timestamp) return 1;
+            if (!b.timestamp) return -1;
+            return a.timestamp.localeCompare(b.timestamp);
+        });
+
         this.contactList.innerHTML = filtered.map(contact => `
             <div class="contact-item ${this.currentContact?.id === contact.id ? 'active' : ''}"
                  data-id="${this.escapeHtml(contact.id)}">
                 <div class="avatar">
-                    <img src="${this.escapeHtml(contact.avatar)}" alt="${this.escapeHtml(contact.name)}" onerror="this.src='https://i.pravatar.cc/50?img=${Math.floor(Math.random() * 70)}'">
+                    <img src="${this.escapeHtml(contact.avatar)}" alt="${this.escapeHtml(contact.name)}"
+                         onerror="this.src='https://i.pravatar.cc/50?img=${Math.floor(Math.random() * 70)}'">
                     <span class="status-indicator ${contact.online ? 'online' : 'offline'}"></span>
                 </div>
                 <div class="contact-info">
@@ -230,7 +278,6 @@ class ChatApp {
                 </div>
             </div>
         `).join('');
-
     }
 
     filterContacts(tab = 'all') {
@@ -244,10 +291,10 @@ class ChatApp {
         if (!contact) return;
 
         this.currentContact = contact;
+        this.messagePage = 0;
+        this.hasMoreMessages = true;
         this.loadMessages(contactId);
-
         this.renderContacts();
-        this.showChatArea(contact);
 
         if (contact.unread > 0) {
             contact.unread = 0;
@@ -269,32 +316,59 @@ class ChatApp {
         this.messageInput?.focus();
     }
 
-    loadMessages(contactId) {
+    async loadMessages(contactId) {
         if (!this.chatMessages) return;
 
         const messages = this.messages[contactId] || [];
         if (messages.length === 0) {
-            this.fetchMessages(contactId);
+            await this.fetchMessages(contactId, 0);
             return;
         }
         this.renderMessages(messages);
     }
 
-    // Using the corrected /api/chat/history endpoint
-    async fetchMessages(contactId) {
+    async fetchMessages(contactId, page) {
         try {
-            const response = await auth.authFetch(`${this.apiBase}/chat/history/${contactId}`);
+            const response = await auth.authFetch(
+                `${this.apiBase}/chat/history/${contactId}?page=${page}&size=50`
+            );
+
             if (response.ok) {
-                const messages = await response.json();
-                this.messages[contactId] = messages;
-                this.renderMessages(messages);
+                const data = await response.json();
+                const messages = data.content || [];
+
+                if (!this.messages[contactId]) {
+                    this.messages[contactId] = [];
+                }
+
+                if (page === 0) {
+                    this.messages[contactId] = messages;
+                } else {
+                    this.messages[contactId] = [...messages, ...this.messages[contactId]];
+                }
+
+                this.hasMoreMessages = !data.last;
+                this.renderMessages(this.messages[contactId]);
                 this.saveLocalMessages();
+
+                if (page === 0) {
+                    this.scrollToBottom();
+                }
             } else {
                 console.error('Failed to fetch messages:', await response.text());
             }
         } catch (error) {
             console.error('Failed to fetch messages:', error);
         }
+    }
+
+    async loadMoreMessages() {
+        if (!this.currentContact || this.isLoadingMessages || !this.hasMoreMessages) return;
+
+        this.isLoadingMessages = true;
+        this.messagePage++;
+        await this.fetchMessages(this.currentContact.id, this.messagePage);
+        this.isLoadingMessages = false;
     }
 
     renderMessages(messages) {
@@ -312,7 +386,12 @@ class ChatApp {
         let html = '';
         let lastDate = '';
 
-        messages.forEach(msg => {
+        // Sort messages by timestamp ascending for display
+        const sortedMessages = [...messages].sort((a, b) =>
+            new Date(a.timestamp) - new Date(b.timestamp)
+        );
+
+        sortedMessages.forEach(msg => {
             const msgDate = new Date(msg.timestamp);
             const dateStr = msgDate.toLocaleDateString();
 
@@ -337,7 +416,17 @@ class ChatApp {
         });
 
         this.chatMessages.innerHTML = html;
-        this.scrollToBottom();
+
+        // Maintain scroll position when loading older messages
+        if (this.messagePage > 0) {
+            // Keep scroll position after adding older messages
+            const firstMessage = this.chatMessages.querySelector('.message-wrapper');
+            if (firstMessage) {
+                const rect = firstMessage.getBoundingClientRect();
+                const containerRect = this.chatMessages.getBoundingClientRect();
+                // This is a simple approach - you might want to use scrollTop preservation
+            }
+        }
     }
 
     sendMessage() {
@@ -346,18 +435,27 @@ class ChatApp {
         const content = this.messageInput.value.trim();
         if (!content) return;
 
+        // Check message length
+        if (content.length > 1000) {
+            auth.showError('messageInput', 'Message cannot exceed 1000 characters');
+            return;
+        }
+
         const message = {
             message: content,
             receiver: this.currentContact.id,
             sender: auth.username,
             timestamp: new Date().toISOString(),
             delivered: false,
-            read: false
+            read: false,
+            fileUrl: null,
+            fileType: null,
+            fileName: null
         };
 
-        // Optimistic update
         this.addMessageToUI(message, true);
         this.messageInput.value = '';
+        this.isTyping = false;
 
         if (this.connected && this.stompClient) {
             this.stompClient.send('/chat/chat.private', {}, JSON.stringify(message));
@@ -367,7 +465,6 @@ class ChatApp {
     }
 
     handleNewMessage(message) {
-        // Ensure message has valid timestamp
         if (!message.timestamp) {
             message.timestamp = new Date().toISOString();
         }
@@ -382,8 +479,8 @@ class ChatApp {
 
         const contact = this.contacts.find(c => c.id === message.sender);
         if (contact) {
-            contact.lastMessage = message.message;
-            contact.timestamp = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            contact.lastMessage = message.message || (message.fileUrl ? '📎 File' : '');
+            contact.timestamp = this.formatTime(new Date(message.timestamp));
             if (!isCurrent) {
                 contact.unread = (contact.unread || 0) + 1;
             }
@@ -420,14 +517,53 @@ class ChatApp {
     renderFileBubble(message) {
         const url = `${this.apiBase}${message.fileUrl}`;
         const isImage = message.fileType && message.fileType.startsWith('image/');
+        const fileName = message.fileName || 'File';
+
         if (isImage) {
-            return `<img src="${url}" alt="${this.escapeHtml(message.message || 'shared image')}" style="max-width: 240px; border-radius: 8px; display: block;">`;
+            return `<img src="${url}" alt="${this.escapeHtml(fileName)}" style="max-width: 240px; border-radius: 8px; display: block; cursor: pointer;" onclick="window.open('${url}', '_blank')">`;
         }
-        return `<a href="${url}" target="_blank" rel="noopener noreferrer" download>📎 ${this.escapeHtml(message.message || 'Download file')}</a>`;
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" download="${this.escapeHtml(fileName)}">📎 ${this.escapeHtml(fileName)}</a>`;
     }
 
-    markMessagesAsRead(contactId) {
-        // Update local state for immediate UI feedback...
+    handleTyping() {
+        if (!this.currentContact || !this.connected) return;
+
+        if (!this.isTyping) {
+            this.isTyping = true;
+            this.sendTypingIndicator(true);
+        }
+
+        clearTimeout(this.typingTimeout);
+        this.typingTimeout = setTimeout(() => {
+            this.isTyping = false;
+            this.sendTypingIndicator(false);
+        }, 3000);
+    }
+
+    sendTypingIndicator(isTyping) {
+        if (this.stompClient && this.connected) {
+            this.stompClient.send('/chat/chat.typing', {}, JSON.stringify({
+                receiver: this.currentContact.id,
+                typing: isTyping
+            }));
+        }
+    }
+
+    handleTypingIndicator(data) {
+        const contact = this.contacts.find(c => c.id === data.sender);
+        if (contact && this.currentContact && this.currentContact.id === data.sender) {
+            const statusText = this.chatContactStatusText;
+            if (data.typing) {
+                statusText.textContent = 'Typing...';
+                statusText.className = 'contact-status typing';
+            } else {
+                statusText.textContent = contact.online ? 'Online' : 'Offline';
+                statusText.className = `contact-status ${contact.online ? 'online' : ''}`;
+            }
+        }
+    }
+
+    async markMessagesAsRead(contactId) {
         const messages = this.messages[contactId] || [];
         messages.forEach(msg => {
             if (msg.sender === contactId && !msg.read) {
@@ -438,6 +574,29 @@ class ChatApp {
 
         if (this.connected && this.stompClient) {
             this.stompClient.send('/chat/chat.read', {}, JSON.stringify({ sender: contactId }));
+        }
+    }
+
+    handleReadReceipt(data) {
+        const contact = this.contacts.find(c => c.id === data.receiver);
+        if (contact) {
+            const messages = this.messages[contact.id] || [];
+            messages.forEach(msg => {
+                if (msg.sender === auth.username && !msg.read) {
+                    msg.read = true;
+                }
+            });
+            this.saveLocalMessages();
+
+            if (this.currentContact && this.currentContact.id === contact.id) {
+                // Update UI for read receipts
+                const statusElements = this.chatMessages.querySelectorAll('.message-wrapper.sent .status');
+                statusElements.forEach(el => {
+                    if (el.textContent === '✓✓') return;
+                    el.textContent = '✓✓';
+                    el.className = 'status read';
+                });
+            }
         }
     }
 
@@ -468,11 +627,28 @@ class ChatApp {
         }
     }
 
-    // Using the corrected /api/contacts/add endpoint
+    async fetchUnreadMessages() {
+        try {
+            const response = await auth.authFetch(`${this.apiBase}/chat/unread`);
+            if (response.ok) {
+                const unread = await response.json();
+                unread.forEach(msg => {
+                    if (!this.messages[msg.sender]) {
+                        this.messages[msg.sender] = [];
+                    }
+                    this.messages[msg.sender].push(msg);
+                });
+                this.saveLocalMessages();
+            }
+        } catch (error) {
+            console.error('Failed to fetch unread messages:', error);
+        }
+    }
+
     async addContact() {
         const usernameInput = document.getElementById('contactUsername');
         const username = usernameInput?.value.trim();
-        
+
         if (!username) {
             auth.showError('addContactForm', 'Please enter a username');
             return;
@@ -489,7 +665,7 @@ class ChatApp {
             if (response.ok) {
                 document.getElementById('addContactModal').classList.remove('active');
                 if (usernameInput) usernameInput.value = '';
-                this.loadContacts();
+                await this.loadContacts();
                 auth.showSuccess(`Added ${username} to contacts!`);
             } else {
                 auth.showError('addContactForm', data.message || 'Failed to add contact');
@@ -500,7 +676,6 @@ class ChatApp {
         }
     }
 
-    // Using the corrected /api/chat/send endpoint
     async sendMessageViaRest(message) {
         try {
             const response = await auth.authFetch(`${this.apiBase}/chat/send`, {
@@ -523,6 +698,12 @@ class ChatApp {
             return;
         }
 
+        // Validate file size (10MB max)
+        if (file.size > 10 * 1024 * 1024) {
+            auth.showError('fileInput', 'File size cannot exceed 10MB');
+            return;
+        }
+
         const formData = new FormData();
         formData.append('file', file);
 
@@ -535,15 +716,17 @@ class ChatApp {
             if (!response.ok) {
                 const err = await response.json().catch(() => ({}));
                 console.error('Upload failed:', err.message || response.statusText);
+                auth.showError('fileInput', err.message || 'Upload failed');
                 return;
             }
 
             const uploaded = await response.json();
 
             const message = {
-                message: uploaded.originalName,
+                message: uploaded.originalName || file.name,
                 fileUrl: uploaded.fileUrl,
                 fileType: uploaded.contentType,
+                fileName: uploaded.originalName || file.name,
                 receiver: this.currentContact.id,
                 sender: auth.username,
                 timestamp: new Date().toISOString(),
@@ -551,7 +734,6 @@ class ChatApp {
                 read: false
             };
 
-            // Optimistic update, same pattern as sendMessage()
             this.addMessageToUI(message, true);
 
             if (this.connected && this.stompClient) {
@@ -561,10 +743,22 @@ class ChatApp {
             }
         } catch (error) {
             console.error('File upload error:', error);
+            auth.showError('fileInput', 'File upload failed');
         }
     }
 
-    // Helpers
+    formatTime(date) {
+        if (!(date instanceof Date)) date = new Date(date);
+        const now = new Date();
+        const diff = now - date;
+
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return Math.floor(diff / 60000) + 'm';
+        if (diff < 86400000) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (diff < 172800000) return 'Yesterday';
+        return date.toLocaleDateString();
+    }
+
     formatDate(dateStr) {
         const today = new Date().toLocaleDateString();
         const yesterday = new Date(Date.now() - 86400000).toLocaleDateString();
@@ -583,6 +777,7 @@ class ChatApp {
     }
 
     escapeHtml(text) {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
@@ -590,7 +785,9 @@ class ChatApp {
 
     scrollToBottom() {
         if (this.chatMessages) {
-            this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            setTimeout(() => {
+                this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+            }, 100);
         }
     }
 
@@ -605,7 +802,6 @@ class ChatApp {
             const data = localStorage.getItem(`chat_messages_${auth.username}`);
             if (data) {
                 this.messages = JSON.parse(data);
-                // Ensure all messages have timestamp
                 Object.keys(this.messages).forEach(key => {
                     this.messages[key] = this.messages[key].map(msg => {
                         if (!msg.timestamp) msg.timestamp = new Date().toISOString();
@@ -615,12 +811,29 @@ class ChatApp {
             }
         } catch (e) {}
     }
+
+    // Clean up on page unload
+    cleanup() {
+        this.updateUserStatus('offline');
+        if (this.stompClient) {
+            try {
+                this.stompClient.disconnect();
+            } catch(e) {}
+        }
+    }
 }
 
 // Initialize chat when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     if (document.querySelector('.chat-page')) {
         window.chatApp = new ChatApp();
+    }
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', () => {
+    if (window.chatApp) {
+        window.chatApp.cleanup();
     }
 });
 

@@ -20,7 +20,7 @@ public class WebSocketSessionEventListener {
 	@EventListener
 	public void handleSessionConnected(SessionConnectedEvent event) {
 		Principal userPrincipal = event.getUser();
-		if(userPrincipal != null) {
+		if(userPrincipal != null && !userPrincipal.getName().isEmpty()) {
 			String userID = userPrincipal.getName();
 			onlineUsers.put(userID, "ONLINE");
 			//update database
@@ -34,7 +34,7 @@ public class WebSocketSessionEventListener {
 	@EventListener
 	public void handleSessionDisconnected(SessionDisconnectEvent event) {
 		Principal userPrincipal = event.getUser();
-		if(userPrincipal != null) {
+		if(userPrincipal != null && !userPrincipal.getName().isEmpty()) {
 			String userID = userPrincipal.getName();
 			onlineUsers.remove(userID);
 			userRepository.findByUsername(userID).ifPresent(user -> {

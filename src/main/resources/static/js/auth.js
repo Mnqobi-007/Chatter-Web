@@ -1,6 +1,7 @@
 class AuthManager {
     constructor() {
         this.token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+        this.refreshToken = localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken');
         this.username = localStorage.getItem('username') || sessionStorage.getItem('username');
         this.isAuthenticated = !!this.token;
         this.apiBase = '/api';
@@ -51,6 +52,7 @@ class AuthManager {
         // Update UI based on auth state
         this.updateUI();
 
+        // Redirect if authenticated and on home page
         if (this.isAuthenticated && window.location.pathname === `${this.apiBase}/`) {
             window.location.href = `${this.apiBase}/chats`;
         }
@@ -122,15 +124,10 @@ class AuthManager {
                 this.username = data.username || username;
                 this.isAuthenticated = true;
 
-                if (rememberMe) {
-                    localStorage.setItem('authToken', data.token);
-                    localStorage.setItem('refreshToken', data.refreshToken);
-                    localStorage.setItem('username', this.username);
-                } else {
-                    sessionStorage.setItem('authToken', data.token);
-                    sessionStorage.setItem('refreshToken', data.refreshToken);
-                    sessionStorage.setItem('username', this.username);
-                }
+                const storage = rememberMe ? localStorage : sessionStorage;
+                storage.setItem('authToken', data.token);
+                storage.setItem('refreshToken', data.refreshToken);
+                storage.setItem('username', this.username);
 
                 document.getElementById('loginModal').classList.remove('active');
                 this.updateUI();
@@ -167,11 +164,7 @@ class AuthManager {
             const response = await fetch(`${this.apiBase}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    username, 
-                    email, 
-                    password 
-                })
+                body: JSON.stringify({ username, email, password })
             });
 
             const data = await response.json();
@@ -201,9 +194,8 @@ class AuthManager {
             if (!response.ok) return false;
             const data = await response.json();
             this.token = data.token;
-            // keep it in whichever storage was already in use
-            (localStorage.getItem('refreshToken') ? localStorage : sessionStorage)
-                .setItem('authToken', data.token);
+            const storage = localStorage.getItem('refreshToken') ? localStorage : sessionStorage;
+            storage.setItem('authToken', data.token);
             return true;
         } catch (e) {
             return false;
@@ -216,26 +208,26 @@ class AuthManager {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refreshToken: this.refreshToken })
-            }).catch(() => {});  // don't block logout on network failure
+            }).catch(() => {});
         }
-        localStorage.removeItem('refreshToken');  
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('username');
-        sessionStorage.removeItem('refreshToken');
-        sessionStorage.removeItem('authToken');
-        sessionStorage.removeItem('username');
+
+        ['authToken', 'refreshToken', 'username'].forEach(key => {
+            localStorage.removeItem(key);
+            sessionStorage.removeItem(key);
+        });
+
         this.token = null;
+        this.refreshToken = null;
         this.username = null;
         this.isAuthenticated = false;
         this.updateUI();
-        
-        // Disconnect WebSocket if exists
+
         if (window.chatApp && window.chatApp.stompClient) {
             try {
                 window.chatApp.stompClient.disconnect();
             } catch(e) {}
         }
-        
+
         window.location.href = `${this.apiBase}/`;
     }
 
@@ -246,7 +238,7 @@ class AuthManager {
         if (this.isAuthenticated) {
             navLinks.innerHTML = `
                 <a href="/chats">Chats</a>
-                <span class="user-badge" style="color: var(--text-secondary); padding: 0 8px;">${this.username}</span>
+                <span class="user-badge" style="color: var(--text-secondary); padding: 0 8px;">${this.escapeHtml(this.username)}</span>
                 <button class="btn btn-primary btn-sm" id="logoutBtn">Logout</button>
             `;
             document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
@@ -278,7 +270,7 @@ class AuthManager {
     showError(formId, message) {
         const form = document.getElementById(formId);
         if (!form) return;
-        
+
         const existing = form.querySelector('.form-error');
         if (existing) existing.remove();
 
@@ -342,6 +334,12 @@ class AuthManager {
         bar.style.background = colors[index];
         text.textContent = `Password strength: ${strengths[index]}`;
         text.style.color = colors[index];
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     getAuthHeaders() {

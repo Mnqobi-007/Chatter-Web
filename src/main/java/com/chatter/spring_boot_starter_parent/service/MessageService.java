@@ -23,6 +23,7 @@ public class MessageService {
 		return messageRepository.save(message);
 	}
 	//@Cacheable("conversation")
+    @Transactional
 	public List<Message> getConversation(String currentUser, String contactId) {
 		return messageRepository.findConversation(currentUser, contactId);
 	}
