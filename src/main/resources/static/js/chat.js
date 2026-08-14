@@ -295,6 +295,7 @@ class ChatApp {
         this.hasMoreMessages = true;
         this.loadMessages(contactId);
         this.renderContacts();
+        this.showChatArea(contact);
 
         if (contact.unread > 0) {
             contact.unread = 0;

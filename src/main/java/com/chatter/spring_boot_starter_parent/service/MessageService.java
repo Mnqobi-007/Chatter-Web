@@ -3,6 +3,8 @@ package com.chatter.spring_boot_starter_parent.service;
 import java.util.List;
 
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import com.chatter.spring_boot_starter_parent.model.Message;
@@ -24,7 +26,7 @@ public class MessageService {
 	}
 	//@Cacheable("conversation")
     @Transactional
-	public List<Message> getConversation(String currentUser, String contactId) {
-		return messageRepository.findConversation(currentUser, contactId);
+	public Page<Message> getConversation(String currentUser, String contactId, Pageable pageable) {
+		return messageRepository.findConversation(currentUser, contactId, pageable);
 	}
 }

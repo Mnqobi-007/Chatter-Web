@@ -11,6 +11,10 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -111,13 +115,32 @@ public class ChatController {
             Map.of("userId", username, "status", status)
         );
     }
+
+    @MessageMapping("/chat.typing")
+    public void sendTypingIndicator(@Payload Map<String, Object> payload, Authentication auth) {
+        String sender = auth.getName();
+        String receiver = (String) payload.get("receiver");
+        Object typing = payload.get("typing");
+        if (receiver == null) {
+            return;
+        }
+
+        messagingTemplate.convertAndSendToUser(
+                receiver,
+                "/queue/typing",
+                Map.of("sender", sender, "typing", typing != null ? typing : false)
+        );
+    }
 	
 	@GetMapping("/history/{contactId}")
-    public ResponseEntity<List<Message>> getHistory(
-            @PathVariable String contactId, 
+    public ResponseEntity<Page<Message>> getHistory(
+            @PathVariable String contactId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
             Authentication auth) {
         String currentUser = auth.getName();
-        List<Message> messages = messageService.getConversation(currentUser, contactId);
+        Pageable pageable = PageRequest.of(page, size, Sort.by("timestamp").descending());
+        Page<Message> messages = messageService.getConversation(currentUser, contactId, pageable);
         return ResponseEntity.ok(messages);
     }
     
@@ -135,10 +158,10 @@ public class ChatController {
             String storedFilename = fileStorageService.store(file);
             String fileUrl = "/chat/files/" + storedFilename;
             return ResponseEntity.ok(Map.of(
-                "fileUrl", fileUrl,
-                "originalName", file.getOriginalFilename(),
-                "contentType", file.getContentType(),
-                "size", file.getSize()
+                    "fileUrl", fileUrl,
+                    "originalName", file.getOriginalFilename(),
+                    "contentType", file.getContentType(),
+                    "size", file.getSize()
             ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
