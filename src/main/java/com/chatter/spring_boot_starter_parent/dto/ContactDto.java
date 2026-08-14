@@ -34,7 +34,7 @@ public class ContactDto {
                 user.getFirstName(),
                 user.getLastName(),
                 user.getProfilePicture(),
-                user.isActive(),
+                user.isOnline(),
                 user.getLastActive()
         );
     }
