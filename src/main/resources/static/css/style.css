@@ -480,7 +480,7 @@ body {
 }
 .footer-grid {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr 1fr;
     gap: 3rem;
     margin-bottom: 3rem;
 }
@@ -524,6 +524,11 @@ body {
     transition: var(--transition);
 }
 .footer-links a:hover { color: var(--text-primary); }
+.footer-links span {
+    display: block;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
 .footer-bottom {
     padding-top: 2rem;
     border-top: 1px solid var(--card-border);

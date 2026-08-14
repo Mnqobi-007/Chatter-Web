@@ -1,5 +1,6 @@
 package com.chatter.spring_boot_starter_parent.controller;
 
+import com.chatter.spring_boot_starter_parent.dto.ContactDto;
 import com.chatter.spring_boot_starter_parent.model.Contact;
 import com.chatter.spring_boot_starter_parent.repository.ContactRepository;
 import org.springframework.cache.annotation.CachePut;
@@ -27,7 +28,7 @@ public class ContactsController {
 
     @GetMapping
     //@Cacheable("contacts")
-    public ResponseEntity<List<User>> getContacts(Authentication auth) {
+    public ResponseEntity<List<ContactDto>> getContacts(Authentication auth) {
         String currentUser = auth.getName();
         List<Contact> contacts = contactRepository.findByOwnerUsername(currentUser);
         List<String> contactUsernames = contacts.stream()
@@ -35,7 +36,10 @@ public class ContactsController {
                 .collect(Collectors.toList());
 
         List<User> users = userRepository.findByUsernameIn(contactUsernames);
-        return ResponseEntity.ok(users);
+        List<ContactDto> contactDtos = users.stream()
+                .map(ContactDto::from)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(contactDtos);
     }
 
     @PostMapping("/add")

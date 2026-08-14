@@ -208,8 +208,7 @@ class ChatApp {
                     online: user.online || false,
                     lastMessage: user.lastMessage || '',
                     timestamp: user.lastMessageTime ? this.formatTime(user.lastMessageTime) : '',
-                    unread: user.unreadCount || 0,
-                    email: user.email
+                    unread: user.unreadCount || 0
                 }));
             } else {
                 console.error('Failed to load contacts');
