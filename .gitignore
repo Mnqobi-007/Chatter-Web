@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local DB / uploads / logs (do not commit) ###
+data/
+uploads/
+*.log
+hs_err_pid*.log
+replay_pid*.log
