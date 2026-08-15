@@ -28,7 +28,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 		// TODO Auto-generated method stub
 		WebSocketMessageBrokerConfigurer.super.registerStompEndpoints(registry);
 		registry.addEndpoint("/ws")
-	    .setAllowedOriginPatterns("http://localhost:3000", "http://localhost:8080")
+	    .setAllowedOriginPatterns("http://localhost:3000", "http://localhost:8080", "https://chatter-web.onrender.com")
 	    .withSockJS();
 	}
 	
